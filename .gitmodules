@@ -1,0 +1,6 @@
+[submodule "libs/wsserver"]
+	path = libs/wsserver
+	url = git@github.com:ert-tiroir/wsserver.git
+[submodule "libs/wsvideo"]
+	path = libs/wsvideo
+	url = git@github.com:ert-tiroir/wsserver-video.git
