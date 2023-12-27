@@ -1,15 +1,9 @@
 # use pkg-config for getting CFLAGS and LDLIBS
-FFMPEG_LIBS=    libavdevice                        \
-                libavformat                        \
-                libavfilter                        \
-                libavcodec                         \
-                libswresample                      \
-                libswscale                         \
-                libavutil                          \
+LIBS=opencv4
 
 CFLAGS += -g
-CFLAGS := $(shell pkg-config --cflags $(FFMPEG_LIBS)) $(CFLAGS)
-LDLIBS := $(shell pkg-config --libs $(FFMPEG_LIBS)) $(LDLIBS)
+CFLAGS := $(shell pkg-config --cflags $(LIBS)) $(CFLAGS)
+LDLIBS := $(shell pkg-config --libs $(LIBS)) $(LDLIBS)
 
 SOURCEDIR := $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))/build
 SOURCES   := $(shell find $(SOURCEDIR) -name '*.cpp')
@@ -30,13 +24,23 @@ copysrc:
 	cp -r libs/wsvideo/wsvideo build/
 	cp -r wsvideo-ffmpeg build/
 
-	cp entry.cpp build/
+	cp $(EXAMPLE) build/
 compile:
-	g++ -o build/out  $(CFLAGS) $(LDLIBS) -I./build $(SOURCES)
+	objects=""; \
+	for file in $(SOURCES); do \
+		echo $$file; \
+		echo "$${file%.cpp}.o"; \
+		$(COMPILER) -o "$${file%.cpp}.o" -c -x c++ -I./build $(CFLAGS) $$file; \
+		objects="$$objects $${file%.cpp}.o"; \
+	done; \
+	$(COMPILER) $$objects $(LDLIBS) -o build/out
 	mv build/out out
 build:
-	make -B copysrc
-	make -B compile
+	echo $(LDLIBS)
+	echo $(CFLAGS)
+	make -B copysrc EXAMPLE="$(EXAMPLE)"
+	make -B compile COMPILER="$(COMPILER)"
+	rm -rf build/
 
 clean-test:
 	$(RM) test*.pgm test.h264 test.mp2 test.sw test.mpg
