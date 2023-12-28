@@ -1,9 +1,9 @@
 
 /**********************************************************************************/
-/* examples/transcode.cpp                                                         */
+/* examples/dynamic_image.cpp                                                     */
 /*                                                                                */
-/* This file contains an example on how to broadcast a video stream that reflects */
-/* a local video.                                                                 */
+/* This file contains an example on how to broadcast a video stream containing    */
+/* user made images programatically                                               */
 /**********************************************************************************/
 /*                  This file is part of the ERT-Tiroir project                   */
 /*                  github.com/ert-tiroir/wsserver-video-ffmpeg                   */
@@ -31,57 +31,79 @@
 /* SOFTWARE.                                                                      */
 /**********************************************************************************/
 
-#include <unistd.h>
 #include <string>
 #include <wsserver/server.h>
-#include <wsvideo-ffmpeg/middlewares/ffmpeg.h>
+#include <wsvideo-ffmpeg/middlewares/framewriter.h>
 
 using namespace std;
 
 WebSocketServer  server;
 VideoBroadcaster broadcaster(nullptr, "");
 
+/**
+ * Fill the image of the middleware
+ * 
+ * @param middleware the middleware containing the image
+ * @param frame the index of the frame
+ */
+void fillImage (FFMPEGFrameWriterMiddleware& middleware, int frame) {
+    for (int x = 0; x < middleware.getWidth(); x ++) {
+        for (int y = 0; y < middleware.getHeight(); y ++) {
+            // (Y, Cb, Cr) format
+            int Y  = (x + y   + frame * 3) & 255;
+            int Cb = (128 + y + frame * 2) & 255;
+            int Cr = (64  + x + frame * 5) & 255;
+
+            // (R, G, B) format
+            int r = std::min(255, (int) std::max(0.0, 1.164 * (Y - 16) + 0     * (Cb - 128) + 1.596 * (Cr - 64)));
+            int g = std::min(255, (int) std::max(0.0, 1.164 * (Y - 16) - 0.392 * (Cb - 128) - 0.813 * (Cr - 64)));
+            int b = std::min(255, (int) std::max(0.0, 1.164 * (Y - 16) + 2.017 * (Cb - 128) + 0     * (Cr - 64)));
+
+            middleware.setColor(x, y, r, g, b);
+        }
+    }
+}
+
+/**
+ * Run the server
+ */
 int main () {
-    // create the server and broadcaster
     server.init(5420);
+
+    // create the broadcaster on channel "flux.mp4"
     broadcaster = VideoBroadcaster(&server, "flux.mp4");
 
+    // wait for one client to connect (technically more is possible but this is a simple example)
     while (!server.listen()) continue ;
 
-    // setup the ffmpeg middleware
-    FFMPEGMiddleware middleware;
-    middleware.init(&broadcaster);
+    // create the middleware
+    FFMPEGFrameWriterMiddleware middleware;
+    // 25fps, width = height = 300
+    middleware.init(&broadcaster, 25, 300, 300);
+    // Use non blocking I/O for the ffmpeg middleware
     middleware.getPipe()->useBlocking(false);
 
-    {
-        // read the mp4 file and send blocks of 2000 bytes every 100ms
-        string str = "./test.mp4";
+    int frame = 0;
+    while (true) {
+        // fill the image
+        fillImage(middleware, frame);
 
-        FILE* file = fopen(str.c_str(), "rb");
+        // flush the frame and sleeps until time has reached the next frame
+        middleware.flushFrame();
+        // read the output of the middleware and forward it to the broadcaster
+        middleware.tick();
 
-        const int BUF_SIZE = 2000;
-        char buffer[BUF_SIZE];
+        // send packets to new clients (here only useful at frame 0)
+        broadcaster.tick();
 
-        ssize_t size;
-
-        while ((size = fread(buffer, sizeof(*buffer), BUF_SIZE, file)) > 0) {
-            // send the buffer
-            middleware.send(buffer, size);
-            // retrieve ffmpeg's output and send it to the broadcaster
-            middleware.tick();
-            // send old packets to new clients and setups broadcast for new clients
-            broadcaster.tick();
-            
-            usleep(100000);
-        }
-
-        fclose(file);
+        frame ++;
     }
 
     // close the pipe
     middleware.getPipe()->closeWriter();
     middleware.getPipe()->useBlocking(true);
-    // read the last bytes
+
+    // read the last bits of information from the pipe
     middleware.tick();
     broadcaster.tick();
 

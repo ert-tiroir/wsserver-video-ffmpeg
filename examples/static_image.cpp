@@ -1,9 +1,9 @@
 
 /**********************************************************************************/
-/* examples/transcode.cpp                                                         */
+/* examples/static_image.cpp                                                      */
 /*                                                                                */
-/* This file contains an example on how to broadcast a video stream that reflects */
-/* a local video.                                                                 */
+/* This file contains an example on how to broadcast a video stream containing    */
+/* the same frame infinitely                                                      */
 /**********************************************************************************/
 /*                  This file is part of the ERT-Tiroir project                   */
 /*                  github.com/ert-tiroir/wsserver-video-ffmpeg                   */
@@ -31,57 +31,75 @@
 /* SOFTWARE.                                                                      */
 /**********************************************************************************/
 
-#include <unistd.h>
+#include <stdlib.h>
 #include <string>
+#include <iostream>
 #include <wsserver/server.h>
-#include <wsvideo-ffmpeg/middlewares/ffmpeg.h>
+#include <wsvideo-ffmpeg/middlewares/framewriter.h>
 
 using namespace std;
 
 WebSocketServer  server;
 VideoBroadcaster broadcaster(nullptr, "");
 
+/**
+ * Read the bytes contained in the image and store it into a string
+ */
+std::string readImageBytes () {
+    const int BUFFER_SIZE = 2048;
+    char buffer[BUFFER_SIZE];
+
+    std::string result = "";
+
+    FILE*  file = fopen("test.jpg", "r");
+    size_t size;
+
+    // read BUFFER_SIZE blocks
+    while ((size = fread(buffer, sizeof(*buffer), BUFFER_SIZE, file)) > 0) {
+        std::string local(size, '.');
+        for (int i = 0; i < size; i ++) local[i] = buffer[i];
+
+        result += local;
+    }
+
+    return result;
+}
+
 int main () {
     // create the server and broadcaster
     server.init(5420);
+
     broadcaster = VideoBroadcaster(&server, "flux.mp4");
 
+    // listen for a single client
     while (!server.listen()) continue ;
 
-    // setup the ffmpeg middleware
-    FFMPEGMiddleware middleware;
-    middleware.init(&broadcaster);
+    // create the middleware
+    FFMPEGFrameWriterMiddleware middleware;
+    // 25 fps, width, height is useless as the image data is already encoded
+    middleware.init(&broadcaster, 25, 0, 0);
+    // Use non blocking I/O for the ffmpeg pipe
     middleware.getPipe()->useBlocking(false);
 
-    {
-        // read the mp4 file and send blocks of 2000 bytes every 100ms
-        string str = "./test.mp4";
+    // read the image bytes
+    std::string buffer = readImageBytes();
 
-        FILE* file = fopen(str.c_str(), "rb");
+    while (true) {
+        // send the image data
+        middleware.send(buffer);
+        // retrieve output of ffmpeg and forward it to the broadcaster
+        middleware.tick();
+        // send old packets to the new clients and sets up the broadcast for the new clients
+        broadcaster.tick();
 
-        const int BUF_SIZE = 2000;
-        char buffer[BUF_SIZE];
-
-        ssize_t size;
-
-        while ((size = fread(buffer, sizeof(*buffer), BUF_SIZE, file)) > 0) {
-            // send the buffer
-            middleware.send(buffer, size);
-            // retrieve ffmpeg's output and send it to the broadcaster
-            middleware.tick();
-            // send old packets to new clients and setups broadcast for new clients
-            broadcaster.tick();
-            
-            usleep(100000);
-        }
-
-        fclose(file);
+        // wait for the next frame to sync with the fps
+        middleware.waitForNextFrame();
     }
 
-    // close the pipe
+    // close the writer
     middleware.getPipe()->closeWriter();
     middleware.getPipe()->useBlocking(true);
-    // read the last bytes
+    // read the last bytes from the reader
     middleware.tick();
     broadcaster.tick();
 

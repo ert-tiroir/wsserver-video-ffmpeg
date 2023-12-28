@@ -40,7 +40,6 @@ build:
 	echo $(CFLAGS)
 	make -B copysrc EXAMPLE="$(EXAMPLE)"
 	make -B compile COMPILER="$(COMPILER)"
-	rm -rf build/
 
 clean-test:
 	$(RM) test*.pgm test.h264 test.mp2 test.sw test.mpg
