@@ -30,6 +30,7 @@
 /* SOFTWARE.                                                                      */
 /**********************************************************************************/
 
+#pragma once
 #include <wsvideo-ffmpeg/pipe.h>
 
 #include <string>

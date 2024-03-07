@@ -31,6 +31,8 @@
 /* SOFTWARE.                                                                      */
 /**********************************************************************************/
 
+#pragma once
+
 #include <wsvideo-ffmpeg/middlewares/middleware.h>
 #include <wsvideo/broadcaster.h>
 
