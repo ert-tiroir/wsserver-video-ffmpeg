@@ -32,6 +32,7 @@
 /* SOFTWARE.                                                                      */
 /**********************************************************************************/
 
+#pragma once
 #include <wsvideo-ffmpeg/middlewares/ffmpeg.h>
 
 #include <opencv2/core/mat.hpp>
